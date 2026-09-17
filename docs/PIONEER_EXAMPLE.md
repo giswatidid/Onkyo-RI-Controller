@@ -1,33 +1,24 @@
 # Pioneer IR remote worked example
 
-This document records the specific IR integration used in the original working controller.
+This document records the Pioneer remote integration used by the supplied example firmware.
 
-It is an **example input implementation**, not a requirement of Onkyo RI. The RI transmitter and Onkyo command set can be driven from another IR remote, buttons, serial commands, network control, or another source.
+It is an **input example**, not a requirement of Onkyo RI. The RI transmitter and Onkyo command set can be driven from another IR remote, buttons, serial commands, network control, or another source.
 
-## Development remote
+## Remote behaviour
 
 The example uses a Pioneer remote associated with a VSX-534 receiver.
 
-The remote frequently sends **paired IR frames** for a single button press. The controller uses the distinguishing frame and ignores the other frame unless it has a purpose of its own.
+The remote frequently sends **paired IR frames** for a single button press. The firmware prints every decoded raw frame to Serial Monitor at 115200 baud, making it straightforward to identify the distinguishing frame for each function.
 
-The firmware prints every decoded raw frame to Serial Monitor at 115200 baud, which makes it straightforward to capture codes for another remote.
-
-## Proven source codes
+## Source codes
 
 | Button | Distinguishing raw code | Controller action |
 |---|---:|---|
 | CD | `0xB34C5AA5` | Select CD mode and send C-705TX power-on `0xF04` |
 | AUX | `0xFB045AA5` | Select tape mode and send K-505X wake `0xD15` |
+| TAPE | `0xF30C5AA5` | Known code; not used by the supplied firmware |
 
-An earlier version used the Pioneer TAPE button:
-
-```text
-TAPE = 0xF30C5AA5
-```
-
-The current firmware intentionally does **not** use that code. AUX is used instead because the cassette deck's analogue audio input is assigned to AUX on the VSX-534.
-
-Pressing the old TAPE source button therefore has no controller action in the current firmware, although its decoded IR frames can still appear in Serial Monitor.
+The supplied firmware uses AUX as the tape-mode source trigger.
 
 ## Transport codes
 
@@ -39,14 +30,6 @@ Pressing the old TAPE source button therefore has no controller action in the cu
 | REW | `0xD22D50AF` |
 | BACK | `0xF6095AA5` |
 
-The PAUSE value is specifically:
-
-```text
-0x3EC15AA5
-```
-
-including the final `5`.
-
 ## Paired/common frames observed
 
 Frames observed as paired/common traffic include:
@@ -57,24 +40,24 @@ Frames observed as paired/common traffic include:
 0xA25D5AA5
 ```
 
-For the AUX button, repeated single presses produced:
+For AUX, repeated single presses produced:
 
 ```text
 IR: 0x649B5AA5
 IR: 0xFB045AA5
 ```
 
-The second frame, `0xFB045AA5`, is the distinguishing AUX frame used by the controller.
+The distinguishing AUX frame used by the controller is `0xFB045AA5`.
 
 ## Duplicate filtering
 
-The example firmware has a 300 ms duplicate filter:
+The example firmware uses a 300 ms duplicate filter:
 
 ```cpp
 const unsigned long DEBOUNCE_MS = 300;
 ```
 
-This has been tested with the Pioneer remote and prevents a repeated copy of an accepted frame from triggering the same action again within that window.
+This has been tested with the Pioneer remote and prevents repeated accepted frames from triggering the same action twice within that interval.
 
 ## Mode mapping
 
@@ -83,7 +66,7 @@ This has been tested with the Pioneer remote and prevents a repeated copy of an 
 Pressing CD:
 
 1. sets `currentMode = MODE_CD`
-2. sends `0xF04` to turn on/select the C-705TX
+2. sends `0xF04` to the C-705TX
 
 While in CD mode:
 
@@ -114,27 +97,9 @@ While in tape mode:
 
 If BACK is pressed while `tapePlaying == true`, the controller immediately sends the appropriate play command for the newly selected direction.
 
-## Why AUX is used in the current installation
-
-The TV is connected to the Pioneer VSX-534 using ARC/eARC. The cassette deck supplies analogue RCA audio.
-
-The receiver configuration is:
-
-```text
-TV  -> ARC/eARC television audio
-AUX -> cassette deck analogue RCA audio
-```
-
-This avoids assigning cassette analogue audio to the TV source and therefore avoids disturbing the TV input's ARC/eARC audio selection.
-
-The result is that one AUX press performs both roles:
-
-- the Pioneer receiver selects the cassette audio input
-- the IR-to-RI controller enters tape mode and wakes the K-505X
-
 ## Capturing a different IR remote
 
-The supplied firmware prints the raw decoded value before its command matching logic:
+The supplied firmware prints the raw decoded value before its command-matching logic:
 
 ```cpp
 uint32_t code = IrReceiver.decodedIRData.decodedRawData;
@@ -148,9 +113,7 @@ To adapt the project to another IR remote:
 1. Open Serial Monitor at 115200 baud.
 2. Press the desired button once.
 3. Record all frames printed for that single press.
-4. Repeat the press after a short pause.
-5. Identify the repeatable frame that distinguishes that button from common/paired frames.
-6. Replace only the relevant `PIONEER_*` constants and mode logic as required.
-7. Leave the proven RI timing and Onkyo command values unchanged unless you are intentionally supporting different Onkyo equipment.
-
-This capture-first approach avoids guessing IR codes.
+4. Repeat after a short pause.
+5. Identify the repeatable frame that distinguishes that function from common/paired frames.
+6. Replace the relevant input-code constants and mode logic.
+7. Leave the RI timing and Onkyo command values unchanged unless intentionally supporting different Onkyo equipment.
