@@ -1,20 +1,8 @@
 # Troubleshooting
 
-This guide focuses on faults actually encountered or directly relevant to the proven build.
+This guide covers practical checks for the documented controller.
 
-## Serial Monitor shows garbage at reset
-
-A few garbage characters may appear around reset/boot before the normal startup banner.
-
-Use:
-
-```text
-115200 baud
-```
-
-If the normal banner follows and the controller operates correctly, the brief garbage seen on the development setup was not a fault.
-
-## No startup banner at all
+## No startup banner
 
 Check:
 
@@ -23,7 +11,7 @@ Check:
 - YP-05/FT232 `TX` is connected to Pro Mini `RXI`.
 - Grounds are common.
 - The Pro Mini is receiving 5 V at VCC.
-- The board/processor selection is `Arduino Pro or Pro Mini` / `ATmega328P (5V, 16 MHz)`.
+- Arduino IDE is set to `Arduino Pro or Pro Mini` / `ATmega328P (5V, 16 MHz)`.
 
 ## Upload fails
 
@@ -38,7 +26,7 @@ YP-05 GND -> Pro Mini GND
 CTS       -> unused
 ```
 
-Also make sure the permanent USB-C supply is disconnected while the YP-05 is providing 5 V.
+Make sure the permanent 5 V supply is disconnected while the programming adapter is supplying power.
 
 ## IR buttons produce no serial output
 
@@ -47,10 +35,10 @@ Check:
 - receiver OUT -> D2
 - receiver GND -> common GND
 - receiver VCC -> 5 V
-- 100 nF capacitor is across receiver VCC/GND
-- the receiver pinout matches the physical part
+- 100 nF capacitor is connected across receiver VCC/GND
+- the receiver pinout matches the actual part
 
-For the receiver proven in the build, viewed from the dark/sensing face with legs down:
+For the receiver used in the tested build, viewed from the dark/sensing face with legs down:
 
 ```text
 LEFT = OUT
@@ -58,51 +46,32 @@ MIDDLE = GND
 RIGHT = VCC
 ```
 
-Do not assume a replacement receiver has the same pinout without checking it.
-
-## IR receiver becomes unresponsive or appears shorted
-
-During permanent construction, one IR receiver ended up effectively shorted between **OUT and GND** and had to be replaced.
-
-If a previously working circuit suddenly stops receiving IR after soldering:
-
-1. Disconnect power.
-2. Inspect solder bridges and wiring around the receiver.
-3. Measure resistance/continuity between OUT and GND.
-4. Compare against a known-good replacement if available.
-5. Replace the receiver if it has been damaged.
-
-The replacement receiver in the development unit restored normal operation immediately.
+Do not assume another receiver has the same pinout without checking it.
 
 ## IR is decoded, but Onkyo equipment does nothing
 
-Check the RI path first:
+Check the RI connection:
 
 ```text
 D8 -> 1 kΩ -> RI TIP
 GND --------> RI SLEEVE
 ```
 
-Also verify:
+Verify:
 
-- the 3.5 mm cable is mono/connected as expected
-- tip and sleeve were identified by continuity, not assumed from wire colour
+- tip and sleeve were identified by continuity
 - the controller and RI sleeve share common ground
 - the correct device chain is being used
 
-The proven chain is:
+For the tested C-705TX/K-505X setup, the known-good route is:
 
 ```text
 controller -> C-705TX -> K-505X
 ```
 
-Direct controller -> K-505X tests were unsuccessful on the development system.
-
 ## RI works unreliably when IRremote is active
 
-This was encountered during development.
-
-IRremote interrupt activity disturbed RI timing. The proven firmware deliberately does this:
+The tested firmware deliberately stops IR reception while transmitting RI:
 
 ```cpp
 IrReceiver.stop();
@@ -110,7 +79,7 @@ sendRI(command);
 IrReceiver.start();
 ```
 
-`sendRI()` also brackets the timing-sensitive waveform with:
+`sendRI()` also disables interrupts during the timing-sensitive waveform:
 
 ```cpp
 noInterrupts();
@@ -118,13 +87,11 @@ noInterrupts();
 interrupts();
 ```
 
-Do not remove this behaviour as a cleanup step if you want to reproduce the known-working implementation.
+Keep this behaviour when reproducing the tested implementation.
 
 ## CD works but tape does not
 
-Confirm the physical RI route is through the C-705TX before the K-505X.
-
-Then test the known K-505X commands:
+Confirm the physical RI route is through the C-705TX before the K-505X, then verify the known K-505X commands:
 
 ```text
 0xD13 = stop
@@ -134,13 +101,13 @@ Then test the known K-505X commands:
 0xD1A = rewind
 ```
 
-If the deck is off, `0xD15` should wake the development K-505X without moving the tape. `0xD13` did not wake it.
+On the tested K-505X, `0xD15` wakes the deck when it is off; `0xD13` does not.
 
 ## Selecting tape mode wakes the deck but does not start playback
 
-That is expected in the proven implementation.
+This is expected with the supplied firmware.
 
-When the K-505X is off:
+When the tested K-505X is off:
 
 ```text
 D15 -> wakes deck, tape does not move
@@ -158,9 +125,9 @@ Press PLAY after the deck is awake to begin playback.
 
 The firmware can only remember the direction it last commanded.
 
-The development K-505X emitted no detectable RI event when it automatically reversed at the end of a side. After such an automatic reversal, the controller's remembered direction may be opposite to the deck's actual physical direction.
+The tested K-505X produced no detectable RI event when it automatically reversed at the end of a side. After an automatic reversal, the controller's remembered direction may therefore differ from the deck's actual direction.
 
-Use BACK to toggle the controller's remembered direction.
+Use BACK to toggle the remembered direction.
 
 ## A remote button prints two different IR codes
 
@@ -175,52 +142,32 @@ IR: 0xFB045AA5
 
 The distinguishing AUX frame is `0xFB045AA5`.
 
-When adapting another button, capture multiple single presses and identify the repeatable frame that distinguishes that function rather than assuming the first frame is the useful one.
+When adapting another remote, capture multiple single presses and identify the repeatable frame that distinguishes the required function rather than assuming the first frame is the useful one.
 
 ## One press triggers an action twice
 
-The example firmware has a 300 ms duplicate filter:
+The example firmware uses a 300 ms duplicate filter:
 
 ```cpp
 const unsigned long DEBOUNCE_MS = 300;
 ```
 
-This value is proven with the development Pioneer remote. If you are using the supplied remote mapping, leave it unchanged.
+This value is tested with the supplied Pioneer example.
 
-## Old Pioneer TAPE button no longer selects tape mode
+## Power checks
 
-This is intentional in the current example firmware.
-
-The earlier distinguishing TAPE code was:
+The permanent build uses regulated 5 V:
 
 ```text
-0xF30C5AA5
-```
-
-The current installation uses AUX instead:
-
-```text
-0xFB045AA5
-```
-
-The old TAPE frame is not matched, so it has no controller action.
-
-## Permanent power works differently from programming power
-
-The permanent build uses regulated USB 5 V:
-
-```text
-USB-C VBUS -> Pro Mini VCC
-USB-C GND  -> common GND
+5 V -> Pro Mini VCC
+GND -> common GND
 ```
 
 Do not feed regulated 5 V into RAW.
 
-Do not connect both the YP-05 5 V output and permanent USB-C VBUS simultaneously.
+Do not connect both the programming adapter's 5 V output and the permanent 5 V supply simultaneously.
 
-## Quick known-good checklist
-
-For the exact development configuration:
+## Known-good configuration
 
 ```text
 MCU:        ATmega328P Pro Mini, 5 V / 16 MHz
@@ -233,4 +180,4 @@ RI route:   controller -> C-705TX -> K-505X
 Tape wake:  0xD15
 ```
 
-If the hardware matches this and Serial Monitor shows the expected IR/action messages, troubleshoot the RI cable and device chain before changing the proven timing code.
+If the hardware matches this configuration and Serial Monitor shows the expected IR/action messages, check the RI cable and device chain before changing the tested RI timing.
